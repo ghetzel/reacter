@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
+	"github.com/codegangsta/cli"
 	"github.com/ghetzel/reacter"
 	"github.com/ghetzel/reacter/util"
-	"github.com/codegangsta/cli"
 	"github.com/op/go-logging"
 	"github.com/satori/go.uuid"
 	"os"
