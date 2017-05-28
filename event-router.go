@@ -4,13 +4,14 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"github.com/ghodss/yaml"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ghodss/yaml"
 )
 
 const (
@@ -65,7 +66,7 @@ func (self *EventRouter) AddHandler(handlerConfig Handler) error {
 	}
 
 	if handlerConfig.QueryTimeout > 0 {
-		handler.QueryTimeout = handler.QueryTimeout
+		handler.QueryTimeout = handlerConfig.QueryTimeout
 	}
 
 	if len(handlerConfig.CheckNames) > 0 {
@@ -146,9 +147,7 @@ func (self *EventRouter) RunQueryCacher(interval time.Duration) error {
 
 func (self *EventRouter) RegenerateCache() {
 	for _, handler := range self.Handlers {
-		go func() {
-			h := handler
-
+		go func(h *Handler) {
 			if nodes, err := h.ExecuteNodeQuery(); err == nil {
 				if len(nodes) > 0 {
 					data := strings.Join(nodes, "\n") + "\n"
@@ -162,7 +161,7 @@ func (self *EventRouter) RegenerateCache() {
 			} else {
 				log.Warningf("Query command for handler '%s' failed: %v", h.Name, err)
 			}
-		}()
+		}(handler)
 	}
 }
 

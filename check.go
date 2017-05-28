@@ -297,6 +297,4 @@ func (self *Check) Monitor(eventStream chan CheckEvent) error {
 			}
 		}
 	}
-
-	return nil
 }

@@ -3,12 +3,13 @@ package reacter
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/ghodss/yaml"
-	"github.com/op/go-logging"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ghodss/yaml"
+	"github.com/op/go-logging"
 )
 
 var log = logging.MustGetLogger(`reacter`)
@@ -59,14 +60,14 @@ func (self *Reacter) AddCheck(checkConfig Check) error {
 		check.FlapThresholdHigh = checkConfig.FlapThresholdHigh
 		check.Observations.FlapThresholdHigh = checkConfig.FlapThresholdHigh
 	} else if checkConfig.FlapThresholdHigh < 0 {
-		return fmt.Errorf("Cannot specify a negative high flap threshold (%d)", checkConfig.FlapThresholdHigh)
+		return fmt.Errorf("Cannot specify a negative high flap threshold (%d)", int(checkConfig.FlapThresholdHigh))
 	}
 
 	if checkConfig.FlapThresholdLow > 0 {
 		check.FlapThresholdLow = checkConfig.FlapThresholdLow
 		check.Observations.FlapThresholdLow = checkConfig.FlapThresholdLow
 	} else if checkConfig.FlapThresholdLow < 0 {
-		return fmt.Errorf("Cannot specify a negative low flap threshold (%d)", checkConfig.FlapThresholdLow)
+		return fmt.Errorf("Cannot specify a negative low flap threshold (%d)", int(checkConfig.FlapThresholdLow))
 	}
 
 	check.NodeName = self.NodeName

@@ -2,6 +2,7 @@ package reacter
 
 import (
 	"fmt"
+
 	"github.com/streadway/amqp"
 )
 
@@ -76,8 +77,6 @@ func (self *Consumer) Connect() error {
 	} else {
 		return err
 	}
-
-	return nil
 }
 
 func (self *Consumer) SubscribeRaw() (<-chan amqp.Delivery, error) {

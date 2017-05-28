@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"time"
+
 	"github.com/codegangsta/cli"
 	"github.com/ghetzel/reacter"
 	"github.com/ghetzel/reacter/util"
 	"github.com/op/go-logging"
 	"github.com/satori/go.uuid"
-	"os"
-	"time"
 )
 
 var log = logging.MustGetLogger(`main`)

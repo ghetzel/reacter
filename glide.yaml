@@ -1,7 +1,0 @@
-package: github.com/ghetzel/reacter
-import:
-- package: github.com/codegangsta/cli
-- package: github.com/ghodss/yaml
-- package: github.com/op/go-logging
-- package: github.com/satori/go.uuid
-- package: github.com/streadway/amqp
