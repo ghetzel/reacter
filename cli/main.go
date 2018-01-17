@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/codegangsta/cli"
+	"github.com/ghetzel/go-stockutil/stringutil"
 	"github.com/ghetzel/reacter"
 	"github.com/ghetzel/reacter/util"
 	"github.com/op/go-logging"
-	"github.com/satori/go.uuid"
 )
 
 var log = logging.MustGetLogger(`main`)
@@ -81,7 +81,7 @@ func main() {
 					if hostname, err := os.Hostname(); err == nil {
 						f.NodeName = hostname
 					} else {
-						f.NodeName = uuid.NewV4().String()
+						f.NodeName = stringutil.UUID().String()
 					}
 				} else {
 					f.NodeName = name
