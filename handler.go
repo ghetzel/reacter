@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ghetzel/go-stockutil/log"
 )
 
 const (

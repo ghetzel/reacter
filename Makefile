@@ -1,21 +1,23 @@
-.PHONY: test deps
+.PHONY: deps docs
+.EXPORT_ALL_VARIABLES:
 
-all: fmt deps build
+GO111MODULE ?= on
+LOCALS      := $(shell find . -type f -name '*.go')
+
+all: deps test build docs
 
 deps:
-	@go list golang.org/x/tools/cmd/goimports || go get golang.org/x/tools/cmd/goimports
-	go generate -x
-	go get .
-
-clean:
-	-rm -rf bin
+	go get ./...
+	-go mod tidy
+	go generate -x ./...
 
 fmt:
-	goimports -w .
-	go vet .
+	gofmt -w $(LOCALS)
+	go vet ./...
 
 test:
-	go test .
+	go test ./...
 
 build: fmt
-	go build -o bin/`basename ${PWD}` cli/*.go
+	go build -o bin/reacter cmd/reacter/main.go
+	which reacter && cp -v bin/reacter `which reacter` || true

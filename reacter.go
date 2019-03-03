@@ -8,11 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ghetzel/go-stockutil/log"
 	"github.com/ghodss/yaml"
-	"github.com/op/go-logging"
 )
-
-var log = logging.MustGetLogger(`reacter`)
 
 type Reacter struct {
 	NodeName         string

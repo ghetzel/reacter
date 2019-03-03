@@ -5,14 +5,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/codegangsta/cli"
+	"github.com/ghetzel/cli"
+	"github.com/ghetzel/go-stockutil/log"
 	"github.com/ghetzel/go-stockutil/stringutil"
 	"github.com/ghetzel/reacter"
 	"github.com/ghetzel/reacter/util"
-	"github.com/op/go-logging"
 )
-
-var log = logging.MustGetLogger(`main`)
 
 const (
 	DEFAULT_LOGLEVEL  = `info`
@@ -21,18 +19,13 @@ const (
 
 func main() {
 	app := cli.NewApp()
+
 	app.Name = util.ApplicationName
 	app.Usage = util.ApplicationSummary
 	app.Version = util.ApplicationVersion
-	app.EnableBashCompletion = false
+
 	app.Before = func(c *cli.Context) error {
-		logging.SetFormatter(logging.MustStringFormatter(`%{color}%{level:.4s}%{color:reset}[%{id:04d}] %{message}`))
-
-		if level, err := logging.LogLevel(c.String(`log-level`)); err == nil {
-			logging.SetLevel(level, `main`)
-			logging.SetLevel(level, `reacter`)
-		}
-
+		log.SetLevelString(c.String(`log-level`))
 		return nil
 	}
 

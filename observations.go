@@ -3,6 +3,8 @@ package reacter
 import (
 	"fmt"
 	"time"
+
+	"github.com/ghetzel/go-stockutil/log"
 )
 
 const (

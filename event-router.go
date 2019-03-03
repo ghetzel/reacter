@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ghetzel/go-stockutil/log"
 	"github.com/ghodss/yaml"
 )
 

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/ghetzel/go-stockutil/log"
 )
 
 const (
@@ -292,7 +294,7 @@ func (self *Check) Monitor(eventStream chan CheckEvent) error {
 			self.executeAndPush()
 		case stop := <-self.StopMonitorC:
 			if stop {
-				log.Infof("Check '%s' monitor is stopping")
+				log.Infof("Check '%s' monitor is stopping", self.Name)
 				return nil
 			}
 		}
