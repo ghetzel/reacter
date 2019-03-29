@@ -12,6 +12,9 @@ import (
 	"time"
 
 	"github.com/ghetzel/go-stockutil/log"
+	"github.com/ghetzel/go-stockutil/sliceutil"
+	"github.com/ghetzel/go-stockutil/typeutil"
+	shellwords "github.com/mattn/go-shellwords"
 )
 
 const (
@@ -22,8 +25,8 @@ const (
 type Check struct {
 	NodeName          string                 `json:"node_name"`
 	Name              string                 `json:"name"`
-	Command           []string               `json:"command"`
-	Timeout           int                    `json:"timeout"`
+	Command           interface{}            `json:"command"`
+	Timeout           interface{}            `json:"timeout"`
 	Enabled           bool                   `json:"enabled"`
 	State             ObservationState       `json:"state"`
 	HardState         bool                   `json:"hard"`
@@ -31,7 +34,7 @@ type Check struct {
 	Parameters        map[string]interface{} `json:"parameters,omitempty"`
 	Environment       map[string]string      `json:"environment,omitempty"`
 	Directory         string                 `json:"directory,omitempty"`
-	Interval          int                    `json:"interval"`
+	Interval          interface{}            `json:"interval"`
 	FlapThresholdHigh float32                `json:"flap_threshold_high,omitempty"`
 	FlapThresholdLow  float32                `json:"flap_threshold_low,omitempty"`
 	Rise              int                    `json:"rise,omitempty"`
@@ -52,7 +55,6 @@ type CheckEvent struct {
 func NewCheck() *Check {
 	return &Check{
 		Observations: NewObservations(),
-		Command:      make([]string, 0),
 		Timeout:      DEFAULT_CHECK_TIMEOUT,
 		Enabled:      true,
 		HardState:    true,
@@ -86,15 +88,35 @@ func (self *Check) StateString() string {
 	return state
 }
 
+func (self *Check) IsOK() bool {
+	return (self.State == SuccessState)
+}
+
 func (self *Check) ID() string {
 	idStr := fmt.Sprintf("%s:%s", self.NodeName, self.Name)
 	hash := sha1.Sum([]byte(idStr[:]))
 	return hex.EncodeToString([]byte(hash[:]))
 }
 
+func (self *Check) cmdline() ([]string, error) {
+	if typeutil.IsEmpty(self.Command) {
+		return nil, fmt.Errorf("command not specified")
+	} else if typeutil.IsArray(self.Command) {
+		if args := sliceutil.Stringify(self.Command); len(args) > 0 {
+			return args, nil
+		} else {
+			return nil, fmt.Errorf("command not specified")
+		}
+	} else if args, err := shellwords.Parse(typeutil.String(self.Command)); err == nil {
+		return args, nil
+	} else {
+		return nil, err
+	}
+}
+
 func (self *Check) Execute() (Observation, error) {
 	if self.Enabled {
-		if len(self.Command) > 0 {
+		if args, err := self.cmdline(); err == nil {
 			var output []byte
 			var err error
 			var exitStatus int
@@ -103,8 +125,8 @@ func (self *Check) Execute() (Observation, error) {
 
 			go func() {
 				var err error
-				log.Debugf("Executing check '%s': %s", self.Name, self.Command)
-				cmd := exec.Command(self.Command[0], self.Command[1:]...)
+				log.Debugf("Executing check '%s': %s", self.Name, args)
+				cmd := exec.Command(args[0], args[1:]...)
 
 				if self.Directory != `` {
 					cmd.Dir = self.Directory
@@ -123,7 +145,7 @@ func (self *Check) Execute() (Observation, error) {
 			select {
 			case err = <-errchan:
 				log.Debugf("Check '%s' execution complete", self.Name)
-			case <-time.After(time.Millisecond * time.Duration(self.Timeout)):
+			case <-time.After(duration(self.Timeout)):
 				return Observation{}, fmt.Errorf("Timed out after %dms waiting for the command to execute", self.Timeout)
 			}
 
@@ -133,11 +155,6 @@ func (self *Check) Execute() (Observation, error) {
 				if exiterr, ok := err.(*exec.ExitError); ok {
 					if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
 						exitStatus = status.ExitStatus()
-
-						//  enforce UNKNOWN=3 status
-						if exitStatus > 3 {
-							exitStatus = 3
-						}
 					} else {
 						log.Errorf("Error running check '%s': unknown exit status", self.Name)
 						exitStatus = 3
@@ -217,7 +234,7 @@ func (self *Check) Execute() (Observation, error) {
 
 		} else {
 			self.Enabled = false
-			return Observation{}, fmt.Errorf("Cannot execute check '%s': command not specified; disabling check", self.Name)
+			return Observation{}, fmt.Errorf("Cannot execute check '%s': %v; disabling check", self.Name, err)
 		}
 	} else {
 		return Observation{}, fmt.Errorf("Cannot execute check '%s': check is disabled", self.Name)
@@ -283,7 +300,7 @@ func (self *Check) IsFallen() bool {
 }
 
 func (self *Check) Monitor(eventStream chan CheckEvent) error {
-	ticker := time.NewTicker(time.Duration(self.Interval) * time.Second)
+	ticker := time.NewTicker(duration(self.Interval))
 	self.EventStream = eventStream
 
 	self.executeAndPush()

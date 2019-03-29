@@ -3,21 +3,30 @@ package reacter
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
-	"path/filepath"
-	"strings"
+	"time"
 
+	"github.com/ghetzel/go-stockutil/executil"
 	"github.com/ghetzel/go-stockutil/log"
+	"github.com/ghetzel/go-stockutil/timeutil"
+	"github.com/ghetzel/go-stockutil/typeutil"
+	"github.com/ghetzel/reacter/util"
 	"github.com/ghodss/yaml"
 )
+
+var DefaultConfigFile = executil.RootOrString(`/etc/reacter.yml`, `~/.config/reacter.yml`)
+var DefaultConfigDir = executil.RootOrString(`/etc/reacter/conf.d`, `~/.config/reacter.d`)
 
 type Reacter struct {
 	NodeName         string
 	Checks           []*Check
 	Events           chan CheckEvent
+	ConfigFile       string
 	ConfigDir        string
 	PrintJson        bool
+	WriteJson        io.Writer
 	OnlyPrintChanges bool
 	SuppressFlapping bool
 }
@@ -27,10 +36,12 @@ type Config struct {
 }
 
 func NewReacter() *Reacter {
-	rv := new(Reacter)
-	rv.Checks = make([]*Check, 0)
-	rv.Events = make(chan CheckEvent)
-	return rv
+	return &Reacter{
+		ConfigFile: DefaultConfigFile,
+		ConfigDir:  DefaultConfigDir,
+		Checks:     make([]*Check, 0),
+		Events:     make(chan CheckEvent),
+	}
 }
 
 func (self *Reacter) AddCheck(checkConfig Check) error {
@@ -48,10 +59,10 @@ func (self *Reacter) AddCheck(checkConfig Check) error {
 		}
 	}
 
-	if checkConfig.Interval > 0 {
-		check.Interval = checkConfig.Interval
-	} else if checkConfig.Interval < 0 {
-		return fmt.Errorf("Cannot specify a negative interval (%d)", checkConfig.Interval)
+	if d := duration(checkConfig.Interval); d > 0 {
+		check.Interval = d
+	} else if d < 0 {
+		return fmt.Errorf("Cannot specify a negative interval (%v)", d)
 	}
 
 	if checkConfig.FlapThresholdHigh > 0 {
@@ -74,8 +85,8 @@ func (self *Reacter) AddCheck(checkConfig Check) error {
 	check.Environment = checkConfig.Environment
 	check.Parameters = checkConfig.Parameters
 
-	if checkConfig.Timeout > 0 {
-		check.Timeout = checkConfig.Timeout
+	if d := duration(checkConfig.Timeout); d > 0 {
+		check.Timeout = d
 	}
 
 	if checkConfig.Rise > 0 {
@@ -100,26 +111,12 @@ func (self *Reacter) AddCheck(checkConfig Check) error {
 	return nil
 }
 
-func (self *Reacter) LoadConfigDir(path string) error {
-	self.ConfigDir = path
-
-	log.Debugf("Loading configuration from %s", self.ConfigDir)
-
-	filepath.Walk(self.ConfigDir, func(path string, info os.FileInfo, err error) error {
-		if strings.HasSuffix(path, `.yml`) && info.Mode().IsRegular() {
-			log.Infof("Loading: %s", path)
-			if err := self.LoadConfig(path); err != nil {
-				log.Errorf("Error loading %s: %v", path, err)
-				return err
-			}
-		}
-
-		return nil
-	})
-
-	return nil
+// Loads the ConfigFile (if present), and recursively scans and load all *.yml files in ConfigDir.
+func (self *Reacter) ReloadConfig() error {
+	return util.LoadConfigFiles(self.ConfigFile, self.ConfigDir, self)
 }
 
+// Load the configuration file the given path and append any checks to this instance.
 func (self *Reacter) LoadConfig(path string) error {
 	if file, err := os.Open(path); err == nil {
 		if data, err := ioutil.ReadAll(file); err == nil {
@@ -153,20 +150,24 @@ func (self *Reacter) StartEventProcessing() {
 			}
 
 			if !event.Error {
+				var out string
+
+				if event.Output != `` {
+					out = `: ` + event.Output
+				}
+
 				switch event.Check.State {
 				case SuccessState:
-					log.Infof("Check '%s' passed with status %d%s: %s", event.Check.Name, event.Check.State, suffix, event.Output)
+					log.Noticef("%s is healthy%s%s", event.Check.Name, suffix, out)
 				case WarningState:
-					log.Warningf("Check '%s' warning with status %d%s: %s", event.Check.Name, event.Check.State, suffix, event.Output)
-				case CriticalState:
-					log.Errorf("Check '%s' critical with status %d%s: %s", event.Check.Name, event.Check.State, suffix, event.Output)
+					log.Warningf("%s is in a warning state%s%s", event.Check.Name, suffix, out)
 				default:
-					log.Infof("Check '%s' failed with unknown status %d%s: %s", event.Check.Name, event.Check.State, suffix, event.Output)
+					log.Errorf("%s is in a critical state%s%s", event.Check.Name, suffix, out)
 				}
 			} else {
 				log.Errorf("Check '%s' encountered an error during execution: %v", event.Check.Name, event.Output)
 
-				//  put a few things into the check state becuase it failed too quickly to do that itself
+				//  put a few things into the check state because it failed too quickly to do that itself
 				if event.Check.State != 128 {
 					event.Check.StateChanged = true
 				}
@@ -175,13 +176,19 @@ func (self *Reacter) StartEventProcessing() {
 			}
 
 			//  serialize check and print as JSON
-			if self.PrintJson {
+			if self.PrintJson || self.WriteJson != nil {
 				//  ...either always, or only when the state has changed from its previous value
 				if !self.OnlyPrintChanges || event.Check.StateChanged {
 					//  ...either always, or only when the check is NOT flapping
 					if !self.SuppressFlapping || !event.Check.IsFlapping() {
 						if data, err := json.Marshal(event); err == nil {
-							fmt.Printf("%s\n", data[:])
+							if self.PrintJson {
+								fmt.Printf("%s\n", string(data))
+							}
+
+							if self.WriteJson != nil {
+								fmt.Fprintf(self.WriteJson, "%s\n", string(data))
+							}
 						}
 					}
 				}
@@ -191,19 +198,51 @@ func (self *Reacter) StartEventProcessing() {
 }
 
 func (self *Reacter) Run() error {
-	if len(self.Checks) > 0 {
-		log.Infof("Start monitoring %d checks", len(self.Checks))
+	if err := self.ReloadConfig(); err == nil {
+		if len(self.Checks) > 0 {
+			log.Infof("Start monitoring %d checks", len(self.Checks))
 
-		for _, check := range self.Checks {
-			log.Debugf("Starting monitor for check '%s' every %d seconds", check.Name, check.Interval)
-			log.Debugf("%d observation(s) must fail to enter a failed state, %d observation(s) must pass to recover", check.Fall, check.Rise)
-			go check.Monitor(self.Events)
+			for _, check := range self.Checks {
+				log.Debugf("Starting monitor for check '%s' every %d seconds", check.Name, check.Interval)
+				log.Debugf("%d observation(s) must fail to enter a failed state, %d observation(s) must pass to recover", check.Fall, check.Rise)
+				go check.Monitor(self.Events)
+			}
+
+			self.StartEventProcessing()
+		} else {
+			return fmt.Errorf("No checks defined, nothing to do")
 		}
 
-		self.StartEventProcessing()
+		return nil
 	} else {
-		return fmt.Errorf("No checks defined, nothing to do")
+		return err
+	}
+}
+
+func duration(in interface{}, fallback ...time.Duration) time.Duration {
+	var fb time.Duration
+
+	if len(fallback) > 0 {
+		fb = fallback[0]
 	}
 
-	return nil
+	if dd, ok := in.(time.Duration); ok {
+		if dd == 0 {
+			return fb
+		} else {
+			return dd
+		}
+	} else if in == nil {
+		return fb
+	} else if d, err := timeutil.ParseDuration(typeutil.String(in)); err == nil {
+		return d
+	} else if v := typeutil.Int(in); v == 0 {
+		return fb
+	} else if time.Duration(v) < time.Microsecond {
+		return time.Second * time.Duration(v)
+	} else if time.Duration(v) < time.Millisecond {
+		return time.Millisecond * time.Duration(v)
+	} else {
+		panic("invalid interval: " + err.Error())
+	}
 }

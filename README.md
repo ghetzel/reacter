@@ -139,18 +139,21 @@ The configuration consists of a top-level `handlers` array populated with one or
 
 | Field                 | Type             | Required | Default  | Description
 | --------------------- | ---------------- | -------- | -------- | -----------
-| `name`                | String           | Yes      |          | The name of the handler
-| `command`             | Array(String)    | Yes      |          | The handler command expressed as an array of command and command-line parameters
-| `directory`           | String           | No       | `$(pwd)` | The working directory to use when executing the command
-| `query`               | Array(String)    | No       |          | A command to execute before the handler that will return a list of nodes to respond to
-| `query_timeout`       | Integer          | No       | 3000     | How long to wait for the query command to execute before killing it
-| `nodefile`            | String           | No       |          | A path to a file containing a list of nodes to respond to
-| `node_names`          | Array(String)    | No       |          | A list of nodes to respond to (will override `query` and `nodefile`)
 | `checks`              | Array(String)    | No       |          | A list of check names to respond to
-| `flapping`            | Boolean          | No       | true     | Whether to handle flapping checks or not
+| `command`             | Array(String)    | Yes      |          | The handler command expressed as an array of command and command-line parameters
+| `cooldown`            | Duration         | No       | 3000     | How long to wait after the handler has fired before firing again
+| `directory`           | String           | No       | `$(pwd)` | The working directory to use when executing the command
+| `disable`             | Boolean          | No       | false    | Whether to disable the handler
+| `environment`         | Hash(String,Any) | No       |          | A hash of key-value pairs to pass to the handler command as environment variables; replaces the calling shell environment
+| `name`                | String           | Yes      |          | The name of the handler
+| `node_names`          | Array(String)    | No       |          | A list of nodes to respond to (will override `query` and `nodefile`)
+| `nodefile`            | String           | No       |          | A path to a file containing a list of nodes to respond to
 | `only_changes`        | Boolean          | No       | false    | Whether to only handle state changes or not (uses the check result `changed` field)
 | `parameters`          | Hash(String,Any) | No       |          | A hash of key-value pairs to pass to the handler command as environment variables; prefixed with `REACTER_PARAM_`
-| `environment`         | Hash(String,Any) | No       |          | A hash of key-value pairs to pass to the handler command as environment variables; replaces the calling shell environment
+| `query_timeout`       | Duration         | No       | 3000     | How long to wait for the query command to execute before killing it
+| `query`               | Array(String)    | No       |          | A command to execute before the handler that will return a list of nodes to respond to
+| `skip_flapping`       | Boolean          | No       | true     | Whether to skip flapping checks or not
+| `skip_ok`             | Boolean          | No       | false    | Whether to only handle checks in a non-okay state
 
 ### Handler Scripts
 Handler scripts are executed only when a handler definition's conditions are met.  These scripts can be built to do anything that you need done to respond to a check result.  This typically includes things like sending a PagerDuty alert, posting a notification to a Slack channel, or forwarding check data to a time series database.  Handler scripts are called with several well-know environment variables that the handler may use to provide context-specific details about the check result being handled.  These variables include:

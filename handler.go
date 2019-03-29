@@ -10,13 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ghetzel/go-stockutil/fileutil"
 	"github.com/ghetzel/go-stockutil/log"
 )
 
-const (
-	DEFAULT_HANDLE_EXEC_TIMEOUT_MS = 6000
-	DEFAULT_QUERY_EXEC_TIMEOUT_MS  = 3000
-)
+var DefaultHandleExecTimeout = 6 * time.Second
+var DefaultHandleQueryExecTimeout = 3 * time.Second
 
 type Handler struct {
 	Name               string            `json:"name"`
@@ -24,36 +23,21 @@ type Handler struct {
 	NodeFile           string            `json:"nodefile,omitempty"`
 	NodeFileAutoreload bool              `json:"nodefile_autoreload,omitempty"`
 	NodeNames          []string          `json:"node_names,omitempty"`
+	SkipOK             bool              `json:"skip_ok"`
 	CheckNames         []string          `json:"checks,omitempty"`
 	States             []int             `json:"states,omitempty"`
-	HandleFlapping     bool              `json:"flapping"`
+	SkipFlapping       bool              `json:"skip_flapping"`
 	OnlyChanges        bool              `json:"only_changes"`
 	Command            []string          `json:"command,omitempty"`
 	Environment        map[string]string `json:"environment,omitempty"`
 	Parameters         map[string]string `json:"parameters,omitempty"`
 	Directory          string            `json:"directory,omitempty"`
-	Enabled            bool              `json:"enabled,omitempty"`
-	Timeout            int               `json:"timeout,omitempty"`
-	QueryTimeout       int               `json:"query_timeout,omitempty"`
+	Disable            bool              `json:"disable,omitempty"`
+	Timeout            interface{}       `json:"timeout,omitempty"`
+	Cooldown           interface{}       `json:"cooldown,omitempty"`
+	QueryTimeout       interface{}       `json:"query_timeout,omitempty"`
 	CacheDir           string            `json:"-"`
-}
-
-func NewHandler() *Handler {
-	return &Handler{
-		QueryCommand:       make([]string, 0),
-		NodeNames:          make([]string, 0),
-		CheckNames:         make([]string, 0),
-		States:             make([]int, 0),
-		Command:            make([]string, 0),
-		Environment:        make(map[string]string),
-		Parameters:         make(map[string]string),
-		Enabled:            true,
-		HandleFlapping:     true,
-		NodeFileAutoreload: false,
-		OnlyChanges:        false,
-		Timeout:            DEFAULT_HANDLE_EXEC_TIMEOUT_MS,
-		QueryTimeout:       DEFAULT_QUERY_EXEC_TIMEOUT_MS,
-	}
+	lastFiredAt        time.Time
 }
 
 func (self *Handler) GetCacheFilename() string {
@@ -96,8 +80,8 @@ func (self *Handler) ExecuteNodeQuery() ([]string, error) {
 			if !s {
 				return rv, fmt.Errorf("Query command failed")
 			}
-		case <-time.After(time.Millisecond * time.Duration(self.QueryTimeout)):
-			log.Warningf("Handler '%s' timed out after %dms waiting for the query command to execute", self.Name, self.QueryTimeout)
+		case <-time.After(duration(self.QueryTimeout, DefaultHandleQueryExecTimeout)):
+			log.Warningf("Handler '%s' timed out after %v waiting for the query command to execute", self.Name, duration(self.QueryTimeout))
 		}
 
 		//  a query command that returns no nodes means we don't handle this event
@@ -111,12 +95,21 @@ func (self *Handler) ExecuteNodeQuery() ([]string, error) {
 
 func (self *Handler) ShouldExec(check *Check) bool {
 	//  if we're disabled, don't execute
-	if !self.Enabled {
+	if self.Disable {
 		return false
 	}
 
+	if cooldown := duration(self.Cooldown); cooldown > 0 {
+		if !self.lastFiredAt.IsZero() {
+			if since := time.Since(self.lastFiredAt); since < cooldown {
+				log.Debugf("Skipping handler '%s' because it is in a cooldown period (%v < %v)", self.Name, since, cooldown)
+				return false
+			}
+		}
+	}
+
 	//  check if we should handle this check if it's flapping
-	if !self.HandleFlapping && check.IsFlapping() {
+	if self.SkipFlapping && check.IsFlapping() {
 		log.Debugf("Skipping handler '%s' because it doesn't handle flapping but this check is flapping", self.Name)
 		return false
 	}
@@ -124,6 +117,12 @@ func (self *Handler) ShouldExec(check *Check) bool {
 	//  check if we should handle this check only when its state changes
 	if self.OnlyChanges && !check.StateChanged {
 		log.Debugf("Skipping handler '%s' because it only handles state changes and this check has not changed", self.Name)
+		return false
+	}
+
+	// check if the observation is in an OK state, but we're only supposed to fire on non-OK states
+	if self.SkipOK && check.IsOK() {
+		log.Debugf("Skipping handler '%s' because the check is okay", self.Name)
 		return false
 	}
 
@@ -162,19 +161,22 @@ func (self *Handler) ShouldExec(check *Check) bool {
 	}
 
 	//  check if we should handle this check's name
+	var checkMatched bool
+
 	if len(self.CheckNames) > 0 {
-		var checkMatched bool
 		for _, checkName := range self.CheckNames {
 			if checkName == check.Name {
 				checkMatched = true
 				break
 			}
 		}
+	} else {
+		checkMatched = true
+	}
 
-		if !checkMatched {
-			log.Debugf("Skipping handler '%s' because check '%s' is not in the list of checks to handle", self.Name, check.Name)
-			return false
-		}
+	if !checkMatched {
+		log.Debugf("Skipping handler '%s' because check '%s' is not in the list of checks to handle", self.Name, check.Name)
+		return false
 	}
 
 	//  TODO: check if we should handle this check's state
@@ -185,7 +187,7 @@ func (self *Handler) ShouldExec(check *Check) bool {
 }
 
 func (self *Handler) Execute(event CheckEvent) error {
-	if self.Enabled {
+	if !self.Disable {
 		if len(self.Command) > 0 {
 			done := make(chan bool)
 
@@ -194,7 +196,9 @@ func (self *Handler) Execute(event CheckEvent) error {
 				cmd := exec.Command(self.Command[0], self.Command[1:]...)
 
 				//  setup working directory
-				if self.Directory != `` {
+				self.Directory = fileutil.MustExpandUser(self.Directory)
+
+				if fileutil.DirExists(self.Directory) {
 					cmd.Dir = self.Directory
 				}
 
@@ -270,11 +274,11 @@ func (self *Handler) Execute(event CheckEvent) error {
 			select {
 			case <-done:
 				log.Debugf("Handler '%s' execution complete", self.Name)
-			case <-time.After(time.Millisecond * time.Duration(self.Timeout)):
-				return fmt.Errorf("Handler '%s' timed out after %dms waiting for the handler command to execute", self.Name, self.Timeout)
+			case <-time.After(duration(self.Timeout, DefaultHandleExecTimeout)):
+				return fmt.Errorf("Handler '%s' timed out after %v waiting for the handler command to execute", self.Name, duration(self.Timeout))
 			}
 		} else {
-			self.Enabled = false
+			self.Disable = true
 			return fmt.Errorf("Cannot execute handler '%s': command not specified; disabling handler", self.Name)
 		}
 	}

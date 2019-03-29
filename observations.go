@@ -29,10 +29,8 @@ func (self *Observation) SetState(state int) {
 		self.State = SuccessState
 	case 1:
 		self.State = WarningState
-	case 2:
-		self.State = CriticalState
 	default:
-		self.State = UnknownState
+		self.State = CriticalState
 	}
 }
 

@@ -7,23 +7,26 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/ghetzel/go-stockutil/executil"
 	"github.com/ghetzel/go-stockutil/log"
+	"github.com/ghetzel/reacter/util"
 	"github.com/ghodss/yaml"
 )
 
-const (
-	DEFAULT_CACHE_DIR = `/dev/shm/reacter/handler-queries`
+var DefaultCacheDir = executil.RootOrString(
+	`/dev/shm/reacter/handler-queries`,
+	`~/.cache/reacter`,
 )
 
 type EventRouter struct {
-	NodeName  string
-	Handlers  []*Handler
-	ConfigDir string
-	CacheDir  string
+	NodeName   string
+	Handlers   []*Handler
+	ConfigFile string
+	ConfigDir  string
+	CacheDir   string
 }
 
 type HandlerConfig struct {
@@ -31,53 +34,12 @@ type HandlerConfig struct {
 }
 
 func NewEventRouter() *EventRouter {
-	rv := new(EventRouter)
-	rv.Handlers = make([]*Handler, 0)
-	rv.CacheDir = DEFAULT_CACHE_DIR
-
-	return rv
+	return &EventRouter{
+		CacheDir: DefaultCacheDir,
+	}
 }
 
-func (self *EventRouter) AddHandler(handlerConfig Handler) error {
-	handler := NewHandler()
-
-	if handlerConfig.Directory != `` {
-		if info, err := os.Stat(handlerConfig.Directory); err == nil {
-			if info.IsDir() {
-				handler.Directory = handlerConfig.Directory
-			} else {
-				return fmt.Errorf("'%s' is not a directory", handlerConfig.Directory)
-			}
-		} else {
-			return err
-		}
-	}
-
-	handler.QueryCommand = handlerConfig.QueryCommand
-	handler.Name = handlerConfig.Name
-	handler.Command = handlerConfig.Command
-	handler.Environment = handlerConfig.Environment
-	handler.Parameters = handlerConfig.Parameters
-	handler.NodeFile = handlerConfig.NodeFile
-	handler.NodeFileAutoreload = handlerConfig.NodeFileAutoreload
-	handler.CacheDir = self.CacheDir
-
-	if handlerConfig.Timeout > 0 {
-		handler.Timeout = handlerConfig.Timeout
-	}
-
-	if handlerConfig.QueryTimeout > 0 {
-		handler.QueryTimeout = handlerConfig.QueryTimeout
-	}
-
-	if len(handlerConfig.CheckNames) > 0 {
-		handler.CheckNames = handlerConfig.CheckNames
-	}
-
-	if len(handlerConfig.States) > 0 {
-		handler.States = handlerConfig.States
-	}
-
+func (self *EventRouter) AddHandler(handler *Handler) error {
 	//  load cache data
 	handler.LoadNodeFile()
 
@@ -85,34 +47,20 @@ func (self *EventRouter) AddHandler(handlerConfig Handler) error {
 	return nil
 }
 
-func (self *EventRouter) LoadConfigDir(path string) error {
-	self.ConfigDir = path
-
-	log.Debugf("Loading handler configuration from %s", self.ConfigDir)
-
-	filepath.Walk(self.ConfigDir, func(path string, info os.FileInfo, err error) error {
-		if strings.HasSuffix(path, `.yml`) && info.Mode().IsRegular() {
-			log.Debugf("Loading: %s", path)
-			if err := self.LoadConfig(path); err != nil {
-				log.Errorf("Error loading %s: %v", path, err)
-				return err
-			}
-		}
-
-		return nil
-	})
-
-	return nil
+// Loads the ConfigFile (if present), and recursively scans and load all *.yml files in ConfigDir.
+func (self *EventRouter) ReloadConfig() error {
+	return util.LoadConfigFiles(self.ConfigFile, self.ConfigDir, self)
 }
 
 func (self *EventRouter) LoadConfig(path string) error {
 	if file, err := os.Open(path); err == nil {
 		if data, err := ioutil.ReadAll(file); err == nil {
 			handlerConfigs := HandlerConfig{}
+
 			if err := yaml.Unmarshal(data, &handlerConfigs); err == nil {
-				for _, handlerConfig := range handlerConfigs.HandlerDefinitions {
-					if err := self.AddHandler(handlerConfig); err != nil {
-						log.Errorf("Error adding handler '%s': %v", handlerConfig.Name, err)
+				for _, handler := range handlerConfigs.HandlerDefinitions {
+					if err := self.AddHandler(&handler); err != nil {
+						log.Errorf("Error adding handler '%s': %v", handler.Name, err)
 					}
 				}
 			} else {
@@ -167,51 +115,57 @@ func (self *EventRouter) RegenerateCache() {
 }
 
 func (self *EventRouter) Run(input io.Reader) error {
-	log.Debugf("Handling check events read from standard input")
+	if err := self.ReloadConfig(); err == nil {
+		log.Infof("%d handler(s) registered", len(self.Handlers))
 
-	if len(self.Handlers) > 0 {
-		inputScanner := bufio.NewScanner(input)
-		hasErrored := false
+		if len(self.Handlers) > 0 {
+			inputScanner := bufio.NewScanner(input)
+			hasErrored := false
 
-		//  for each line of input...
-		for inputScanner.Scan() {
-			line := inputScanner.Text()
-			done := make(chan bool)
+			//  for each line of input...
+			for inputScanner.Scan() {
+				line := inputScanner.Text()
+				done := make(chan bool)
 
-			go func() {
-				var check CheckEvent
+				go func() {
+					var check CheckEvent
 
-				//  load the input line and execute all matching handlers
-				if err := json.Unmarshal([]byte(line[:]), &check); err == nil && check.Check != nil {
-					for _, handler := range self.Handlers {
-						//  check if we should execute then do so
-						if handler.ShouldExec(check.Check) {
-							if err := handler.Execute(check); err != nil {
-								log.Errorf("Error executing handler %s: %v", handler.Name, err)
-								hasErrored = true
-							} else {
-								log.Infof("Executed handler '%s' for check %s/%s", handler.Name, check.Check.NodeName, check.Check.Name)
+					//  load the input line and execute all matching handlers
+					if err := json.Unmarshal([]byte(line[:]), &check); err == nil && check.Check != nil {
+						for _, handler := range self.Handlers {
+							//  check if we should execute then do so
+							if handler.ShouldExec(check.Check) {
+								if err := handler.Execute(check); err != nil {
+									log.Errorf("Error executing handler %s: %v", handler.Name, err)
+									hasErrored = true
+								} else {
+									log.Infof("Executed handler '%s' for check %s/%s", handler.Name, check.Check.NodeName, check.Check.Name)
+								}
+
+								handler.lastFiredAt = time.Now()
 							}
 						}
+					} else {
+						log.Warningf("Failed to parse input line: %v", err)
 					}
-				} else {
-					log.Warningf("Failed to parse input line: %v", err)
+
+					done <- true
+				}()
+
+				select {
+				case <-done:
 				}
-
-				done <- true
-			}()
-
-			select {
-			case <-done:
 			}
+
+			if hasErrored {
+				return fmt.Errorf("Encountered one or more errors during handler execution")
+			}
+		} else {
+			log.Infof("No handlers defined, nothing to do")
 		}
 
-		if hasErrored {
-			return fmt.Errorf("Encountered one or more errors during handler execution")
-		}
+		return nil
 	} else {
-		return fmt.Errorf("No handlers defined, nothing to do")
+		return err
 	}
-
-	return nil
 }

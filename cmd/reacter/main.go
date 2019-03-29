@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -12,10 +13,7 @@ import (
 	"github.com/ghetzel/reacter/util"
 )
 
-const (
-	DEFAULT_LOGLEVEL  = `info`
-	DEFAULT_CONFIGDIR = `/opt/reacter/conf.d`
-)
+const DefaultLogLevel = `info`
 
 func main() {
 	app := cli.NewApp()
@@ -33,20 +31,33 @@ func main() {
 		cli.StringFlag{
 			Name:   `log-level, L`,
 			Usage:  `Level of log output verbosity`,
-			Value:  DEFAULT_LOGLEVEL,
+			Value:  DefaultLogLevel,
 			EnvVar: `LOGLEVEL`,
 		},
 		cli.StringFlag{
 			Name:   `node-name, n`,
 			Usage:  `The name of the node to use when reporting check output`,
-			EnvVar: `ID`,
+			EnvVar: `REACTER_ID`,
+		},
+		cli.StringFlag{
+			Name:   `config-file, f`,
+			Usage:  `Path to a unified YAML configuration file`,
+			Value:  reacter.DefaultConfigFile,
+			EnvVar: `REACTER_CONFIG`,
 		},
 		cli.StringFlag{
 			Name:   `config-dir, c`,
 			Usage:  `The directory containing YAML configuration files`,
-			Value:  DEFAULT_CONFIGDIR,
-			EnvVar: `CONFIG_DIR`,
+			Value:  reacter.DefaultConfigDir,
+			EnvVar: `REACTER_CONFIG_DIR`,
 		},
+	}
+
+	app.Action = func(c *cli.Context) {
+		// wire up check outputs directly to handler inputs
+		src, dst := io.Pipe()
+		go runHandlers(c, src)
+		runChecks(c, dst)
 	}
 
 	app.Commands = []cli.Command{
@@ -64,49 +75,17 @@ func main() {
 				},
 				cli.BoolFlag{
 					Name:  `no-flapping, F`,
-					Usage: `No not emit events whose checks are flapping between okay and non-okay`,
+					Usage: `Do not emit events whose checks are flapping between okay and non-okay`,
 				},
 			},
 			Action: func(c *cli.Context) {
-				f := reacter.NewReacter()
-
-				if name := c.GlobalString(`node-name`); name == `` {
-					if hostname, err := os.Hostname(); err == nil {
-						f.NodeName = hostname
-					} else {
-						f.NodeName = stringutil.UUID().String()
-					}
-				} else {
-					f.NodeName = name
-				}
-
-				log.Infof("Node name is '%s'", f.NodeName)
-
-				f.PrintJson = c.Bool(`print-json`)
-				f.OnlyPrintChanges = c.Bool(`only-changes`)
-				f.SuppressFlapping = c.Bool(`no-flapping`)
-
-				if err := f.LoadConfigDir(c.GlobalString(`config-dir`)); err == nil {
-					if err := f.Run(); err != nil {
-						log.Fatalf("%v", err)
-					}
-				} else {
-					log.Fatalf("Failed to load configuration: %v", err)
-				}
+				runChecks(c, nil)
 			},
 		}, {
 			Name:  `handle`,
 			Usage: `Receive check events and execute handlers`,
 			Action: func(c *cli.Context) {
-				f := reacter.NewEventRouter()
-
-				if err := f.LoadConfigDir(c.GlobalString(`config-dir`)); err == nil {
-					if err := f.Run(os.Stdin); err != nil {
-						log.Fatalf("%v", err)
-					}
-				} else {
-					log.Fatalf("Failed to load configuration: %v", err)
-				}
+				runHandlers(c, os.Stdin)
 			},
 		}, {
 			Name:  `cacher`,
@@ -115,7 +94,7 @@ func main() {
 				cli.StringFlag{
 					Name:  `cache-dir, C`,
 					Usage: `The location of the directory to save cache output to`,
-					Value: reacter.DEFAULT_CACHE_DIR,
+					Value: reacter.DefaultCacheDir,
 				},
 				cli.BoolFlag{
 					Name:  `once, o`,
@@ -129,20 +108,18 @@ func main() {
 			},
 			Action: func(c *cli.Context) {
 				f := reacter.NewEventRouter()
+				f.ConfigFile = c.GlobalString(`config-file`)
+				f.ConfigDir = c.GlobalString(`config-dir`)
 
-				if err := f.LoadConfigDir(c.GlobalString(`config-dir`)); err == nil {
-					f.CacheDir = c.String(`cache-dir`)
-					intv := c.Duration(`interval`)
+				f.CacheDir = c.String(`cache-dir`)
+				intv := c.Duration(`interval`)
 
-					if c.Bool(`once`) {
-						intv = time.Duration(0)
-					}
+				if c.Bool(`once`) {
+					intv = time.Duration(0)
+				}
 
-					if err := f.RunQueryCacher(intv); err != nil {
-						log.Fatalf("%v", err)
-					}
-				} else {
-					log.Fatalf("Failed to load configuration: %v", err)
+				if err := f.RunQueryCacher(intv); err != nil {
+					log.Fatalf("%v", err)
 				}
 			},
 		}, {
@@ -198,12 +175,6 @@ func main() {
 					log.Fatalf("Must provide an AMQP connection URI as an argument")
 				}
 			},
-		}, {
-			Name:  `version`,
-			Usage: `Output the current version and exit`,
-			Action: func(c *cli.Context) {
-				fmt.Println(util.ApplicationVersion)
-			},
 		},
 	}
 
@@ -211,4 +182,41 @@ func main() {
 	// app.Commands = append(app.Commands, api.Register()...)
 
 	app.Run(os.Args)
+}
+
+func runChecks(c *cli.Context, dst io.Writer) {
+	f := reacter.NewReacter()
+	f.ConfigFile = c.GlobalString(`config-file`)
+	f.ConfigDir = c.GlobalString(`config-dir`)
+
+	if name := c.GlobalString(`node-name`); name == `` {
+		if hostname, err := os.Hostname(); err == nil {
+			f.NodeName = hostname
+		} else {
+			f.NodeName = stringutil.UUID().String()
+		}
+	} else {
+		f.NodeName = name
+	}
+
+	log.Infof("Node name is '%s'", f.NodeName)
+
+	f.PrintJson = c.Bool(`print-json`)
+	f.WriteJson = dst
+	f.OnlyPrintChanges = c.Bool(`only-changes`)
+	f.SuppressFlapping = c.Bool(`no-flapping`)
+
+	if err := f.Run(); err != nil {
+		log.Fatalf("[checks] %v", err)
+	}
+}
+
+func runHandlers(c *cli.Context, src io.Reader) {
+	f := reacter.NewEventRouter()
+	f.ConfigFile = c.GlobalString(`config-file`)
+	f.ConfigDir = c.GlobalString(`config-dir`)
+
+	if err := f.Run(src); err != nil {
+		log.Fatalf("[handlers] %v", err)
+	}
 }
