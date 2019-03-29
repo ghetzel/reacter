@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/ghetzel/go-stockutil/executil"
@@ -29,6 +30,7 @@ type Reacter struct {
 	WriteJson        io.Writer
 	OnlyPrintChanges bool
 	SuppressFlapping bool
+	checkset         sync.Map
 }
 
 type Config struct {
@@ -144,6 +146,8 @@ func (self *Reacter) StartEventProcessing() {
 	for {
 		select {
 		case event := <-self.Events:
+			self.checkset.Store(event.Check.ID(), event)
+
 			var suffix string
 			if event.Check.IsFlapping() {
 				suffix = ` [FLAPPING]`

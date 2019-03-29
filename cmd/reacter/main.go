@@ -17,15 +17,9 @@ const DefaultLogLevel = `info`
 
 func main() {
 	app := cli.NewApp()
-
 	app.Name = util.ApplicationName
 	app.Usage = util.ApplicationSummary
 	app.Version = util.ApplicationVersion
-
-	app.Before = func(c *cli.Context) error {
-		log.SetLevelString(c.String(`log-level`))
-		return nil
-	}
 
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
@@ -51,6 +45,15 @@ func main() {
 			Value:  reacter.DefaultConfigDir,
 			EnvVar: `REACTER_CONFIG_DIR`,
 		},
+		cli.StringFlag{
+			Name:  `http-address, a`,
+			Usage: `If provided, start an HTTP server at this address and serve a web interface.`,
+		},
+	}
+
+	app.Before = func(c *cli.Context) error {
+		log.SetLevelString(c.String(`log-level`))
+		return nil
 	}
 
 	app.Action = func(c *cli.Context) {
@@ -205,6 +208,12 @@ func runChecks(c *cli.Context, dst io.Writer) {
 	f.WriteJson = dst
 	f.OnlyPrintChanges = c.Bool(`only-changes`)
 	f.SuppressFlapping = c.Bool(`no-flapping`)
+
+	if addr := c.GlobalString(`http-address`); addr != `` {
+		server := reacter.NewServer(f)
+		log.Infof("Starting HTTP server at %v", addr)
+		go server.ListenAndServe(addr)
+	}
 
 	if err := f.Run(); err != nil {
 		log.Fatalf("[checks] %v", err)

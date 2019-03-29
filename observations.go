@@ -7,13 +7,11 @@ import (
 	"github.com/ghetzel/go-stockutil/log"
 )
 
-const (
-	DEFAULT_MAX_OBSERVATIONS = 21
-	DEFAULT_FLAP_HIGH_THRESH = 0.5
-	DEFAULT_FLAP_LOW_THRESH  = 0.25
-	FLAP_BASE_COEFFICIENT    = 0.8
-	FLAP_WEIGHT_MULTIPLIER   = 0.02
-)
+const DefaultMaxObservations = 21
+const DefaultFlapHighThresh = 0.5
+const DefaultFlapLowThresh = 0.25
+const FlapBaseCoefficient = 0.8
+const FlapWeightMultiplier = 0.02
 
 type Observation struct {
 	Timestamp       time.Time              `json:"-"`
@@ -39,9 +37,9 @@ type Observations struct {
 	Size              int           `json:"size"`
 	Flapping          bool          `json:"flapping"`
 	FlapDetect        bool          `json:"flap_detection"`
-	FlapThresholdLow  float32       `json:"flap_threshold_low"`
-	FlapThresholdHigh float32       `json:"flap_threshold_high"`
-	StateChangeFactor float32       `json:"flap_factor"`
+	FlapThresholdLow  float64       `json:"flap_threshold_low"`
+	FlapThresholdHigh float64       `json:"flap_threshold_high"`
+	StateChangeFactor float64       `json:"flap_factor"`
 }
 
 type ObservationState int32
@@ -53,13 +51,26 @@ const (
 	UnknownState                   = 3
 )
 
+func (self ObservationState) String() string {
+	switch self {
+	case SuccessState:
+		return `ok`
+	case WarningState:
+		return `warning`
+	case CriticalState:
+		return `critical`
+	default:
+		return `unknown`
+	}
+}
+
 func NewObservations() *Observations {
 	rv := Observations{}
 	rv.Values = make([]Observation, 0)
-	rv.Size = DEFAULT_MAX_OBSERVATIONS
+	rv.Size = DefaultMaxObservations
 	rv.FlapDetect = true
-	rv.FlapThresholdLow = DEFAULT_FLAP_LOW_THRESH
-	rv.FlapThresholdHigh = DEFAULT_FLAP_HIGH_THRESH
+	rv.FlapThresholdLow = DefaultFlapLowThresh
+	rv.FlapThresholdHigh = DefaultFlapHighThresh
 	return &rv
 }
 
@@ -88,7 +99,7 @@ func (self *Observations) Push(observation Observation) error {
 // documented here: https://assets.nagios.com/downloads/nagioscore/docs/nagioscore/3/en/flapping.html
 //
 func (self *Observations) detectFlapping() bool {
-	var stateChanges float32
+	var stateChanges float64
 
 	for i := 0; i < len(self.Values)-1; i++ {
 		if self.Values[i+1].State != self.Values[i].State {
@@ -96,11 +107,11 @@ func (self *Observations) detectFlapping() bool {
 			//  observation occurred in the stack
 
 			//
-			stateChanges += (1.0 * (FLAP_BASE_COEFFICIENT + (float32(i) * FLAP_WEIGHT_MULTIPLIER)))
+			stateChanges += (1.0 * (FlapBaseCoefficient + (float64(i) * FlapWeightMultiplier)))
 		}
 	}
 
-	self.StateChangeFactor = stateChanges / float32(len(self.Values))
+	self.StateChangeFactor = stateChanges / float64(len(self.Values))
 	log.Debugf("  state change: %f/%d, percent: %f%%, flap threshold +%f / -%f", stateChanges, len(self.Values), self.StateChangeFactor, self.FlapThresholdHigh, self.FlapThresholdLow)
 
 	if !self.Flapping {

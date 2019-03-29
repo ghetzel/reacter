@@ -17,10 +17,8 @@ import (
 	shellwords "github.com/mattn/go-shellwords"
 )
 
-const (
-	DEFAULT_CHECK_INTERVAL = 60
-	DEFAULT_CHECK_TIMEOUT  = 10000
-)
+var DefaultCheckInterval = 60
+var DefaultCheckTimeout = 10000
 
 type Check struct {
 	NodeName          string                 `json:"node_name"`
@@ -31,14 +29,14 @@ type Check struct {
 	State             ObservationState       `json:"state"`
 	HardState         bool                   `json:"hard"`
 	StateChanged      bool                   `json:"changed"`
-	Parameters        map[string]interface{} `json:"parameters,omitempty"`
-	Environment       map[string]string      `json:"environment,omitempty"`
+	Parameters        map[string]interface{} `json:"parameters"`
+	Environment       map[string]string      `json:"environment"`
 	Directory         string                 `json:"directory,omitempty"`
 	Interval          interface{}            `json:"interval"`
-	FlapThresholdHigh float32                `json:"flap_threshold_high,omitempty"`
-	FlapThresholdLow  float32                `json:"flap_threshold_low,omitempty"`
-	Rise              int                    `json:"rise,omitempty"`
-	Fall              int                    `json:"fall,omitempty"`
+	FlapThresholdHigh float64                `json:"flap_threshold_high"`
+	FlapThresholdLow  float64                `json:"flap_threshold_low"`
+	Rise              int                    `json:"rise"`
+	Fall              int                    `json:"fall"`
 	Observations      *Observations          `json:"observations"`
 	EventStream       chan CheckEvent        `json:"-"`
 	StopMonitorC      chan bool              `json:"-"`
@@ -55,7 +53,7 @@ type CheckEvent struct {
 func NewCheck() *Check {
 	return &Check{
 		Observations: NewObservations(),
-		Timeout:      DEFAULT_CHECK_TIMEOUT,
+		Timeout:      DefaultCheckTimeout,
 		Enabled:      true,
 		HardState:    true,
 		State:        SuccessState,
@@ -64,7 +62,7 @@ func NewCheck() *Check {
 		Fall:         1,
 		Parameters:   make(map[string]interface{}),
 		Environment:  make(map[string]string),
-		Interval:     DEFAULT_CHECK_INTERVAL,
+		Interval:     DefaultCheckInterval,
 		StopMonitorC: make(chan bool),
 	}
 }
@@ -242,9 +240,11 @@ func (self *Check) Execute() (Observation, error) {
 }
 
 func (self *Check) executeAndPush() {
+	var event CheckEvent
+
 	if observation, err := self.Execute(); err == nil {
 		//  push event onto event channel
-		self.EventStream <- CheckEvent{
+		event = CheckEvent{
 			Timestamp:   time.Now(),
 			Check:       self,
 			Observation: &observation,
@@ -252,19 +252,21 @@ func (self *Check) executeAndPush() {
 			Error:       false,
 		}
 	} else {
-		self.EventStream <- CheckEvent{
+		event = CheckEvent{
 			Timestamp: time.Now(),
 			Check:     self,
 			Output:    err.Error(),
 			Error:     true,
 		}
 	}
+
+	self.EventStream <- event
 }
 
 func (self *Check) IsRisen() bool {
 	oLen := len(self.Observations.Values)
 
-	//  need to have a minumum of observations to make any determination
+	//  need to have a minimum of observations to make any determination
 	if oLen >= self.Rise {
 		lastN := self.Observations.Values[(oLen - self.Rise):]
 
@@ -273,17 +275,15 @@ func (self *Check) IsRisen() bool {
 				return false
 			}
 		}
-
-		return true
-	} else {
-		return true
 	}
+
+	return true
 }
 
 func (self *Check) IsFallen() bool {
 	oLen := len(self.Observations.Values)
 
-	//  need to have a minumum of observations to make any determination
+	//  need to have a minimum of observations to make any determination
 	if oLen >= self.Fall {
 		lastN := self.Observations.Values[(oLen - self.Fall):]
 

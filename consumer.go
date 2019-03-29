@@ -12,22 +12,20 @@ const (
 )
 
 type Consumer struct {
-	ID        string
-	Host      string
-	Port      int
-	Username  string
-	Password  string
-	Vhost     string
-	QueueName string
-
+	ID         string
+	Host       string
+	Port       int
+	Username   string
+	Password   string
+	Vhost      string
+	QueueName  string
 	Durable    bool
 	Autodelete bool
 	Exclusive  bool
-
-	conn    *amqp.Connection
-	channel *amqp.Channel
-	queue   amqp.Queue
-	uri     amqp.URI
+	conn       *amqp.Connection
+	channel    *amqp.Channel
+	queue      amqp.Queue
+	uri        amqp.URI
 }
 
 func NewConsumer(uri string) (*Consumer, error) {

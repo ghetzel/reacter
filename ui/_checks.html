@@ -1,0 +1,37 @@
+---
+bindings:
+-   name:     checks
+    resource: /reacter/v1/checks
+---
+<table class="table table-sm w-100">
+    <thead>
+        <tr>
+            <th class="col-1 pr-4">State</th>
+            <th class="col-5">Name</th>
+            <th class="col-4">Last Checked</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{ range $id, $event := $.bindings.checks }}
+        <tr
+            {{ if $event.check.changed }}
+            class="table-{{ switch $event.check.state `danger` 0 `success` 1 `warning` }}"
+            {{ end }}
+        >
+            <td class="pr-4">
+                {{ if eqx $event.check.state 0 }}
+                <span class="badge badge-success w-100">OK</span>
+                {{ else if eqx $event.check.state 1 }}
+                <span class="badge badge-warning w-100">Warning</span>
+                {{ else }}
+                <span class="badge badge-danger w-100">Critical</span>
+                {{ end }}
+            </td>
+
+            <td>{{ $event.check.name }}</td>
+
+            <td>{{ since $event.timestamp "s" }} ago</td>
+        </tr>
+        {{ end }}
+    </tbody>
+</table>

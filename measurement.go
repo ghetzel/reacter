@@ -1,8 +1,9 @@
 package reacter
 
 import (
-	"strconv"
 	"strings"
+
+	"github.com/ghetzel/go-stockutil/typeutil"
 )
 
 type MeasurementUnit int32
@@ -18,11 +19,11 @@ const (
 
 type Measurement struct {
 	Unit              MeasurementUnit `json:"unit"`
-	Value             float32         `json:"value"`
-	WarningThreshold  float32         `json:"warning"`
-	CriticalThreshold float32         `json:"critical"`
-	Minumum           float32         `json:"minimum"`
-	Maximum           float32         `json:"maximum"`
+	Value             float64         `json:"value"`
+	WarningThreshold  float64         `json:"warning"`
+	CriticalThreshold float64         `json:"critical"`
+	Minumum           float64         `json:"minimum"`
+	Maximum           float64         `json:"maximum"`
 }
 
 func (self *Measurement) SetValues(valueUOM string, warn string, crit string, min string, max string) error {
@@ -37,7 +38,7 @@ func (self *Measurement) SetValues(valueUOM string, warn string, crit string, mi
 		return true
 	})
 
-	factor := float32(1.0)
+	factor := float64(1.0)
 
 	if strings.HasSuffix(valueUOM, `s`) {
 		self.Unit = Time
@@ -86,40 +87,11 @@ func (self *Measurement) SetValues(valueUOM string, warn string, crit string, mi
 		self.Unit = Numeric
 	}
 
-	//  parse value (sans UOM)
-	if v, err := strconv.ParseFloat(valueStr, 32); err == nil {
-		self.Value = float32(v) * factor
-	} else {
-		return err
-	}
-
-	//  parse warn
-	if v, err := strconv.ParseFloat(warn, 32); err == nil {
-		self.WarningThreshold = float32(v) * factor
-	} else {
-		return err
-	}
-
-	//  parse crit
-	if v, err := strconv.ParseFloat(crit, 32); err == nil {
-		self.CriticalThreshold = float32(v) * factor
-	} else {
-		return err
-	}
-
-	//  parse min
-	if v, err := strconv.ParseFloat(min, 32); err == nil {
-		self.Minumum = float32(v) * factor
-	} else {
-		return err
-	}
-
-	//  parse max
-	if v, err := strconv.ParseFloat(max, 32); err == nil {
-		self.Maximum = float32(v) * factor
-	} else {
-		return err
-	}
+	self.Value = typeutil.Float(valueStr) * factor
+	self.WarningThreshold = typeutil.Float(warn) * factor
+	self.CriticalThreshold = typeutil.Float(crit) * factor
+	self.Minumum = typeutil.Float(min) * factor
+	self.Maximum = typeutil.Float(max) * factor
 
 	return nil
 }

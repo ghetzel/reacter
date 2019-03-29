@@ -1,0 +1,13 @@
+<h2>Checks</h2>
+
+<div id="checks"></div>
+
+<script type="text/javascript">
+$(function(){
+    $('#checks').load('/_checks.html');
+
+    setInterval(function(){
+        $('#checks').load('/_checks.html');
+    }, 1000);
+});
+</script>
