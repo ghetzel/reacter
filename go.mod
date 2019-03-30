@@ -6,7 +6,7 @@ require (
 	github.com/c-bata/go-prompt v0.2.2 // indirect
 	github.com/ghetzel/cli v1.17.0
 	github.com/ghetzel/diecast v1.10.22
-	github.com/ghetzel/go-stockutil v1.7.32
+	github.com/ghetzel/go-stockutil v1.7.34
 	github.com/ghodss/yaml v1.0.0
 	github.com/husobee/vestigo v1.1.0
 	github.com/mattn/go-shellwords v1.0.5

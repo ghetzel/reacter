@@ -11,6 +11,7 @@ import (
 
 	"github.com/ghetzel/go-stockutil/executil"
 	"github.com/ghetzel/go-stockutil/log"
+	"github.com/ghetzel/go-stockutil/netutil"
 	"github.com/ghetzel/go-stockutil/timeutil"
 	"github.com/ghetzel/go-stockutil/typeutil"
 	"github.com/ghetzel/reacter/util"
@@ -21,15 +22,16 @@ var DefaultConfigFile = executil.RootOrString(`/etc/reacter.yml`, `~/.config/rea
 var DefaultConfigDir = executil.RootOrString(`/etc/reacter/conf.d`, `~/.config/reacter.d`)
 
 type Reacter struct {
-	NodeName         string
-	Checks           []*Check
-	Events           chan CheckEvent
-	ConfigFile       string
-	ConfigDir        string
-	PrintJson        bool
-	WriteJson        io.Writer
-	OnlyPrintChanges bool
-	SuppressFlapping bool
+	NodeName         string             `json:"name"`
+	Peers            []*netutil.Service `json:"peers"`
+	Checks           []*Check           `json:"-"`
+	Events           chan CheckEvent    `json:"-"`
+	ConfigFile       string             `json:"-"`
+	ConfigDir        string             `json:"-"`
+	PrintJson        bool               `json:"-"`
+	WriteJson        io.Writer          `json:"-"`
+	OnlyPrintChanges bool               `json:"-"`
+	SuppressFlapping bool               `json:"-"`
 	checkset         sync.Map
 }
 

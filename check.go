@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -21,6 +22,7 @@ var DefaultCheckInterval = 60
 var DefaultCheckTimeout = 10000
 
 type Check struct {
+	UID               string                 `json:"id"`
 	NodeName          string                 `json:"node_name"`
 	Name              string                 `json:"name"`
 	Command           interface{}            `json:"command"`
@@ -91,7 +93,7 @@ func (self *Check) IsOK() bool {
 }
 
 func (self *Check) ID() string {
-	idStr := fmt.Sprintf("%s:%s", self.NodeName, self.Name)
+	idStr := fmt.Sprintf("%s:%d:%s", self.NodeName, os.Getpid(), self.Name)
 	hash := sha1.Sum([]byte(idStr[:]))
 	return hex.EncodeToString([]byte(hash[:]))
 }
@@ -113,6 +115,8 @@ func (self *Check) cmdline() ([]string, error) {
 }
 
 func (self *Check) Execute() (Observation, error) {
+	self.UID = self.ID()
+
 	if self.Enabled {
 		if args, err := self.cmdline(); err == nil {
 			var output []byte

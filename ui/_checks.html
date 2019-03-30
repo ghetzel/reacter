@@ -1,18 +1,25 @@
 ---
 bindings:
--   name:     checks
-    resource: /reacter/v1/checks
+-   name:     node
+    resource: /reacter/v1/node
+
+-   name:     peers
+    repeat:   'uniq (pluck $.bindings.node.peers "address")'
+    resource: 'http://{{ . }}/reacter/v1/checks'
+    timeout:  5s
 ---
 <table class="table table-sm w-100">
     <thead>
         <tr>
             <th class="col-1 pr-4">State</th>
+            <th class="col-2">Node</th>
             <th class="col-5">Name</th>
-            <th class="col-4">Last Checked</th>
+            <th class="col-3">Last Checked</th>
         </tr>
     </thead>
     <tbody>
-        {{ range $id, $event := $.bindings.checks }}
+        {{ range $events := sortByKey $.bindings.peers "*.check.node_name" }}
+        {{ range $id, $event := sortByKey $events "check.name" }}
         <tr
             {{ if $event.check.changed }}
             class="table-{{ switch $event.check.state `danger` 0 `success` 1 `warning` }}"
@@ -28,10 +35,14 @@ bindings:
                 {{ end }}
             </td>
 
+            <td>{{ $event.check.node_name }}</td>
+
             <td>{{ $event.check.name }}</td>
+
 
             <td>{{ since $event.timestamp "s" }} ago</td>
         </tr>
+        {{ end }}
         {{ end }}
     </tbody>
 </table>
