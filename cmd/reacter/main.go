@@ -53,9 +53,13 @@ func main() {
 			Name:  `http-path-prefix`,
 			Usage: `If specified, frontend web assets will be expected to be served from this URL subdirectory.`,
 		},
-		cli.BoolTFlag{
+		cli.BoolFlag{
 			Name:  `zeroconf`,
 			Usage: `Publish and perform automatic discovery of peer Reacter instances`,
+		},
+		cli.StringFlag{
+			Name:  `zeroconf-ec2-tag`,
+			Usage: `If specified, a list of peers will be created by finding Amazon EC2 instances with the given tag. If specified as Tag=Value, the tag must match the given value.`,
 		},
 	}
 
@@ -220,7 +224,9 @@ func runChecks(c *cli.Context, dst io.Writer) {
 	if addr := c.GlobalString(`http-address`); addr != `` {
 		server := reacter.NewServer(f)
 		server.PathPrefix = c.GlobalString(`http-path-prefix`)
-		server.Zeroconf = c.GlobalBool(`zeroconf`)
+		server.ZeroconfMDNS = c.GlobalBool(`zeroconf`)
+		server.ZeroconfEC2Tag = c.GlobalString(`zeroconf-ec2-tag`)
+
 		log.Infof("Starting HTTP server at %v", addr)
 		go server.ListenAndServe(addr)
 	}

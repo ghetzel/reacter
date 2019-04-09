@@ -3,6 +3,7 @@ module github.com/ghetzel/reacter
 go 1.12
 
 require (
+	github.com/aws/aws-sdk-go v1.19.11
 	github.com/c-bata/go-prompt v0.2.2 // indirect
 	github.com/ghetzel/cli v1.17.0
 	github.com/ghetzel/diecast v1.10.22
