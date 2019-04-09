@@ -11,10 +11,10 @@ bindings:
 <table class="table table-sm w-100">
     <thead>
         <tr>
-            <th class="col-1 pr-4">State</th>
-            <th class="col-2">Node</th>
-            <th class="col-5">Name</th>
-            <th class="col-3">Last Checked</th>
+            <th class="pr-4">State</th>
+            <th>Node</th>
+            <th>Name</th>
+            <th>Last Checked</th>
         </tr>
     </thead>
     <tbody>
@@ -34,12 +34,8 @@ bindings:
                 <span class="badge badge-danger w-100">Critical</span>
                 {{ end }}
             </td>
-
             <td>{{ $event.check.node_name }}</td>
-
             <td>{{ $event.check.name }}</td>
-
-
             <td>{{ since $event.timestamp "s" }} ago</td>
         </tr>
         {{ end }}
