@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ghetzel/diecast"
@@ -22,8 +23,9 @@ import (
 var ZeroconfInstanceName = `reacter`
 
 type Server struct {
-	Zeroconf bool
-	reacter  *Reacter
+	Zeroconf   bool
+	reacter    *Reacter
+	PathPrefix string
 }
 
 func NewServer(reacter *Reacter) *Server {
@@ -42,6 +44,8 @@ func (self *Server) ListenAndServe(address string) error {
 			return FS(false)
 		}
 	}())
+
+	ui.RoutePrefix = strings.TrimSuffix(self.PathPrefix, `/`)
 
 	router.Get(`/reacter/v1/node`, func(w http.ResponseWriter, req *http.Request) {
 		httputil.RespondJSON(w, self.reacter)

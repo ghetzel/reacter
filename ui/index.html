@@ -4,10 +4,10 @@
 
 <script type="text/javascript">
 $(function(){
-    $('#checks').load('/_checks.html');
+    $('#checks').load('{{ $.diecast.route_prefix }}/_checks.html');
 
     setInterval(function(){
-        $('#checks').load('/_checks.html');
+        $('#checks').load('{{ $.diecast.route_prefix }}/_checks.html');
     }, 1000);
 });
 </script>

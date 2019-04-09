@@ -49,6 +49,10 @@ func main() {
 			Name:  `http-address, a`,
 			Usage: `If provided, start an HTTP server at this address and serve a web interface.`,
 		},
+		cli.StringFlag{
+			Name:  `http-path-prefix`,
+			Usage: `If specified, frontend web assets will be expected to be served from this URL subdirectory.`,
+		},
 		cli.BoolTFlag{
 			Name:  `zeroconf`,
 			Usage: `Publish and perform automatic discovery of peer Reacter instances`,
@@ -215,6 +219,7 @@ func runChecks(c *cli.Context, dst io.Writer) {
 
 	if addr := c.GlobalString(`http-address`); addr != `` {
 		server := reacter.NewServer(f)
+		server.PathPrefix = c.GlobalString(`http-path-prefix`)
 		server.Zeroconf = c.GlobalBool(`zeroconf`)
 		log.Infof("Starting HTTP server at %v", addr)
 		go server.ListenAndServe(addr)
