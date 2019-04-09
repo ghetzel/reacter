@@ -24,15 +24,17 @@ import (
 var ZeroconfInstanceName = `reacter`
 
 type Server struct {
-	ZeroconfMDNS   bool
-	ZeroconfEC2Tag string
-	reacter        *Reacter
-	PathPrefix     string
+	ZeroconfMDNS     bool
+	ZeroconfEC2Tag   string
+	PathPrefix       string
+	reacter          *Reacter
+	ec2CheckInterval time.Duration
 }
 
 func NewServer(reacter *Reacter) *Server {
 	return &Server{
-		reacter: reacter,
+		reacter:          reacter,
+		ec2CheckInterval: 60 * time.Second,
 	}
 }
 
@@ -72,6 +74,8 @@ func (self *Server) ListenAndServe(address string) error {
 }
 
 func (self *Server) startZeroconf(port int) {
+	var ec2lastChecked time.Time
+
 	if self.ZeroconfMDNS || self.ZeroconfEC2Tag != `` {
 		if self.ZeroconfMDNS {
 			// register ourselves
@@ -91,16 +95,27 @@ func (self *Server) startZeroconf(port int) {
 
 			// perform AWS EC2 discovery
 			if tag := self.ZeroconfEC2Tag; tag != `` {
-				tagName, tagValue := stringutil.SplitPair(tag, `=`)
+				if ec2lastChecked.IsZero() || time.Since(ec2lastChecked) > self.ec2CheckInterval {
+					ec2lastChecked = time.Now()
+					tagName, tagValue := stringutil.SplitPair(tag, `=`)
 
-				if ec2svc, err := DiscoverEC2ByTag(tagName, strings.Split(tagValue, `,`)...); err == nil {
-					for i, _ := range ec2svc {
-						ec2svc[i].Port = port
+					if ec2svc, err := DiscoverEC2ByTag(tagName, strings.Split(tagValue, `,`)...); err == nil {
+						log.Debugf("[zeroconf] EC2 discovery: %v=%v", tagName, tagValue)
+
+						for i, _ := range ec2svc {
+							ec2svc[i].Port = port
+
+							if !strings.Contains(ec2svc[i].Address, `:`) {
+								ec2svc[i].Address = fmt.Sprintf("%s:%d", ec2svc[i].Address, port)
+							}
+						}
+
+						peers = append(peers, ec2svc...)
+					} else {
+						log.Warningf("[zeroconf] EC2 discovery: %v", err)
 					}
-
-					peers = append(peers, ec2svc...)
 				} else {
-					log.Warningf("[zeroconf] EC2 discovery: %v", err)
+					time.Sleep(time.Second)
 				}
 			}
 
