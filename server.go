@@ -92,11 +92,13 @@ func (self *Server) startZeroconf(port int) {
 
 		for {
 			peers := make([]*netutil.Service, 0)
+			ran := false
 
 			// perform AWS EC2 discovery
 			if tag := self.ZeroconfEC2Tag; tag != `` {
 				if ec2lastChecked.IsZero() || time.Since(ec2lastChecked) > self.ec2CheckInterval {
 					ec2lastChecked = time.Now()
+					ran = true
 					tagName, tagValue := stringutil.SplitPair(tag, `=`)
 
 					if ec2svc, err := DiscoverEC2ByTag(tagName, strings.Split(tagValue, `,`)...); err == nil {
@@ -127,6 +129,7 @@ func (self *Server) startZeroconf(port int) {
 				}, func(svc *netutil.Service) bool {
 					log.Debugf("[zeroconf] found peer: %v", svc)
 
+					ran = true
 					peers = append(peers, svc)
 					self.reacter.Peers = peers
 
@@ -136,7 +139,9 @@ func (self *Server) startZeroconf(port int) {
 				}
 			}
 
-			self.reacter.Peers = peers
+			if ran {
+				self.reacter.Peers = peers
+			}
 		}
 	}
 }

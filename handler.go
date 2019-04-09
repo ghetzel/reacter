@@ -12,6 +12,9 @@ import (
 
 	"github.com/ghetzel/go-stockutil/fileutil"
 	"github.com/ghetzel/go-stockutil/log"
+	"github.com/ghetzel/go-stockutil/sliceutil"
+	"github.com/ghetzel/go-stockutil/typeutil"
+	shellwords "github.com/mattn/go-shellwords"
 )
 
 var DefaultHandleExecTimeout = 6 * time.Second
@@ -19,7 +22,7 @@ var DefaultHandleQueryExecTimeout = 3 * time.Second
 
 type Handler struct {
 	Name               string            `json:"name"`
-	QueryCommand       []string          `json:"query,omitempty"`
+	QueryCommand       interface{}       `json:"query,omitempty"`
 	NodeFile           string            `json:"nodefile,omitempty"`
 	NodeFileAutoreload bool              `json:"nodefile_autoreload,omitempty"`
 	NodeNames          []string          `json:"node_names,omitempty"`
@@ -28,7 +31,7 @@ type Handler struct {
 	States             []int             `json:"states,omitempty"`
 	SkipFlapping       bool              `json:"skip_flapping"`
 	OnlyChanges        bool              `json:"only_changes"`
-	Command            []string          `json:"command,omitempty"`
+	Command            interface{}       `json:"command,omitempty"`
 	Environment        map[string]string `json:"environment,omitempty"`
 	Parameters         map[string]string `json:"parameters,omitempty"`
 	Directory          string            `json:"directory,omitempty"`
@@ -40,6 +43,22 @@ type Handler struct {
 	lastFiredAt        time.Time
 }
 
+func (self *Handler) cmdline(command interface{}) ([]string, error) {
+	if typeutil.IsEmpty(command) {
+		return nil, fmt.Errorf("command not specified")
+	} else if typeutil.IsArray(command) {
+		if args := sliceutil.Stringify(command); len(args) > 0 {
+			return args, nil
+		} else {
+			return nil, fmt.Errorf("command not specified")
+		}
+	} else if args, err := shellwords.Parse(typeutil.String(command)); err == nil {
+		return args, nil
+	} else {
+		return nil, err
+	}
+}
+
 func (self *Handler) GetCacheFilename() string {
 	return path.Join(self.CacheDir, self.Name+`.txt`)
 }
@@ -48,27 +67,31 @@ func (self *Handler) ExecuteNodeQuery() ([]string, error) {
 	rv := make([]string, 0)
 
 	//  if a QueryCommand was specified, execute it first to populate node names
-	if len(self.QueryCommand) > 0 {
+	if !typeutil.IsZero(self.QueryCommand) {
 		status := make(chan bool)
 
 		go func() {
 			log.Debugf("Executing query command: %v", self.QueryCommand)
 
-			//  execute query command
-			if nodes, err := exec.Command(self.QueryCommand[0], self.QueryCommand[1:]...).Output(); err == nil {
-				lines := strings.Split(string(nodes[:]), "\n")
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if len(line) > 0 && !strings.HasPrefix(line, `#`) {
-						rv = append(rv, line)
+			if args, err := self.cmdline(self.QueryCommand); err == nil {
+				//  execute query command
+				if nodes, err := exec.Command(args[0], args[1:]...).Output(); err == nil {
+					lines := strings.Split(string(nodes[:]), "\n")
+					for _, line := range lines {
+						line = strings.TrimSpace(line)
+						if len(line) > 0 && !strings.HasPrefix(line, `#`) {
+							rv = append(rv, line)
+						}
 					}
-				}
 
-				log.Debugf("Query command returned %d nodes", len(rv))
+					log.Debugf("Query command returned %d nodes", len(rv))
+				} else {
+					log.Debugf("Skipping handler '%s' because the query command failed: %v", self.Name, err)
+					status <- false
+					return
+				}
 			} else {
-				log.Debugf("Skipping handler '%s' because the query command failed: %v", self.Name, err)
-				status <- false
-				return
+				log.Warningf("Invalid query command: %v", err)
 			}
 
 			status <- true
@@ -188,83 +211,88 @@ func (self *Handler) ShouldExec(check *Check) bool {
 
 func (self *Handler) Execute(event CheckEvent) error {
 	if !self.Disable {
-		if len(self.Command) > 0 {
+		if !typeutil.IsZero(self.Command) {
 			done := make(chan bool)
 
 			go func() {
 				log.Debugf("Executing handler '%s': %s", self.Name, self.Command)
-				cmd := exec.Command(self.Command[0], self.Command[1:]...)
 
-				//  setup working directory
-				self.Directory = fileutil.MustExpandUser(self.Directory)
+				if args, err := self.cmdline(self.Command); err == nil {
+					cmd := exec.Command(args[0], args[1:]...)
 
-				if fileutil.DirExists(self.Directory) {
-					cmd.Dir = self.Directory
-				}
+					//  setup working directory
+					self.Directory = fileutil.MustExpandUser(self.Directory)
 
-				//  pass in environment variables
-				for k, v := range self.Environment {
-					//  cannot set environment variables that start with "REACTER_"
-					if !strings.HasPrefix(strings.ToUpper(k), `REACTER_`) {
-						cmd.Env = append(cmd.Env, k+`=`+v)
+					if fileutil.DirExists(self.Directory) {
+						cmd.Dir = self.Directory
 					}
-				}
 
-				//  make parameters available as environment variables with predictable names
-				for k, v := range self.Parameters {
-					cmd.Env = append(cmd.Env, `REACTER_PARAM_`+strings.ToUpper(k)+`=`+v)
-				}
+					//  pass in environment variables
+					for k, v := range self.Environment {
+						//  cannot set environment variables that start with "REACTER_"
+						if !strings.HasPrefix(strings.ToUpper(k), `REACTER_`) {
+							cmd.Env = append(cmd.Env, k+`=`+v)
+						}
+					}
 
-				//  set well-known environment variables
-				//  -------------------------------------------------------------
-				if event.Check.StateChanged {
-					cmd.Env = append(cmd.Env, `REACTER_STATE_CHANGED=1`)
-				} else {
-					cmd.Env = append(cmd.Env, `REACTER_STATE_CHANGED=0`)
-				}
+					//  make parameters available as environment variables with predictable names
+					for k, v := range self.Parameters {
+						cmd.Env = append(cmd.Env, `REACTER_PARAM_`+strings.ToUpper(k)+`=`+v)
+					}
 
-				if event.Check.IsFlapping() {
-					cmd.Env = append(cmd.Env, `REACTER_STATE_FLAPPING=1`)
-				} else {
-					cmd.Env = append(cmd.Env, `REACTER_STATE_FLAPPING=0`)
-				}
-
-				if event.Check.HardState {
-					cmd.Env = append(cmd.Env, `REACTER_STATE_HARD=1`)
-				} else {
-					cmd.Env = append(cmd.Env, `REACTER_STATE_HARD=0`)
-				}
-
-				cmd.Env = append(cmd.Env, `REACTER_STATE=`+event.Check.StateString())
-				cmd.Env = append(cmd.Env, `REACTER_STATE_ID=`+strconv.Itoa(int(event.Check.State)))
-				cmd.Env = append(cmd.Env, `REACTER_CHECK_ID=`+event.Check.ID())
-				cmd.Env = append(cmd.Env, `REACTER_CHECK_NODE=`+event.Check.NodeName)
-				cmd.Env = append(cmd.Env, `REACTER_CHECK_NAME=`+event.Check.Name)
-				cmd.Env = append(cmd.Env, `REACTER_EPOCH=`+strconv.Itoa(int(event.Timestamp.Unix())))
-				cmd.Env = append(cmd.Env, `REACTER_EPOCH_MS=`+strconv.Itoa(int(event.Timestamp.UnixNano())/1000000))
-				cmd.Env = append(cmd.Env, `REACTER_HANDLER=`+self.Name)
-
-				//  -------------------------------------------------------------
-
-				//  setup STDIN pipe and write check event data to it
-				if stdin, err := cmd.StdinPipe(); err == nil {
-
-					//  start command and write raw data to its standar input
-					if err := cmd.Start(); err == nil {
-						io.WriteString(stdin, event.Output)
-						stdin.Close()
+					//  set well-known environment variables
+					//  -------------------------------------------------------------
+					if event.Check.StateChanged {
+						cmd.Env = append(cmd.Env, `REACTER_STATE_CHANGED=1`)
 					} else {
-						log.Errorf("Handler '%s' failed to execute: %v", self.Name, err)
+						cmd.Env = append(cmd.Env, `REACTER_STATE_CHANGED=0`)
 					}
 
-					//  block until command exits
-					if err := cmd.Wait(); err == nil {
-						log.Debugf("Handler '%s' executed successfully", self.Name)
+					if event.Check.IsFlapping() {
+						cmd.Env = append(cmd.Env, `REACTER_STATE_FLAPPING=1`)
 					} else {
-						log.Errorf("Handler '%s' failed during execution: %v", self.Name, err)
+						cmd.Env = append(cmd.Env, `REACTER_STATE_FLAPPING=0`)
+					}
+
+					if event.Check.HardState {
+						cmd.Env = append(cmd.Env, `REACTER_STATE_HARD=1`)
+					} else {
+						cmd.Env = append(cmd.Env, `REACTER_STATE_HARD=0`)
+					}
+
+					cmd.Env = append(cmd.Env, `REACTER_STATE=`+event.Check.StateString())
+					cmd.Env = append(cmd.Env, `REACTER_STATE_ID=`+strconv.Itoa(int(event.Check.State)))
+					cmd.Env = append(cmd.Env, `REACTER_CHECK_ID=`+event.Check.ID())
+					cmd.Env = append(cmd.Env, `REACTER_CHECK_NODE=`+event.Check.NodeName)
+					cmd.Env = append(cmd.Env, `REACTER_CHECK_NAME=`+event.Check.Name)
+					cmd.Env = append(cmd.Env, `REACTER_EPOCH=`+strconv.Itoa(int(event.Timestamp.Unix())))
+					cmd.Env = append(cmd.Env, `REACTER_EPOCH_MS=`+strconv.Itoa(int(event.Timestamp.UnixNano())/1000000))
+					cmd.Env = append(cmd.Env, `REACTER_HANDLER=`+self.Name)
+
+					//  -------------------------------------------------------------
+
+					//  setup STDIN pipe and write check event data to it
+					if stdin, err := cmd.StdinPipe(); err == nil {
+
+						//  start command and write raw data to its standard input
+						if err := cmd.Start(); err == nil {
+							io.WriteString(stdin, event.Output)
+							stdin.Close()
+						} else {
+							log.Errorf("Handler '%s' failed to execute: %v", self.Name, err)
+						}
+
+						//  block until command exits
+						if err := cmd.Wait(); err == nil {
+							log.Debugf("Handler '%s' executed successfully", self.Name)
+						} else {
+							log.Errorf("Handler '%s' failed during execution: %v", self.Name, err)
+						}
+					} else {
+						log.Errorf("Handler '%s' failed setting up command: %v", self.Name, err)
 					}
 				} else {
-					log.Errorf("Handler '%s' failed setting up command: %v", self.Name, err)
+					log.Warningf("Invalid command: %v", err)
 				}
 
 				done <- true

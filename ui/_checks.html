@@ -7,6 +7,8 @@ bindings:
     repeat:   'uniq (pluck $.bindings.node.peers "address")'
     resource: 'http://{{ . }}/reacter/v1/checks'
     timeout:  5s
+    fallback: []
+    only_if:  'count $.bindings.node.peers'
 ---
 <table class="table table-sm w-100">
     <thead>
