@@ -20,6 +20,5 @@ test:
 	go test ./...
 
 build: fmt
-	GOOS=linux GOARCH=amd64 go build -o bin/reacter-linux-amd64 cmd/reacter/main.go
-	GOOS=linux GOARCH=arm go build -o bin/reacter-linux-arm cmd/reacter/main.go
+	go build -o bin/$(BIN) cmd/reacter/main.go
 	which reacter && cp -v bin/$(BIN) `which reacter` || true
