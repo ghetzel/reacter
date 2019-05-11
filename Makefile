@@ -3,6 +3,7 @@
 
 GO111MODULE ?= on
 LOCALS      := $(shell find . -type f -name '*.go')
+BIN         ?= reacter-$(shell go env GOOS)-$(shell go env GOARCH)
 
 all: deps test build docs
 
@@ -19,5 +20,6 @@ test:
 	go test ./...
 
 build: fmt
-	go build -o bin/reacter cmd/reacter/main.go
-	which reacter && cp -v bin/reacter `which reacter` || true
+	GOOS=linux GOARCH=amd64 go build -o bin/reacter-linux-amd64 cmd/reacter/main.go
+	GOOS=linux GOARCH=arm go build -o bin/reacter-linux-arm cmd/reacter/main.go
+	which reacter && cp -v bin/$(BIN) `which reacter` || true
