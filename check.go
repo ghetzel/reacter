@@ -148,7 +148,7 @@ func (self *Check) Execute() (Observation, error) {
 			case err = <-errchan:
 				log.Debugf("Check '%s' execution complete", self.Name)
 			case <-time.After(duration(self.Timeout)):
-				return Observation{}, fmt.Errorf("Timed out after %dms waiting for the command to execute", self.Timeout)
+				return Observation{}, fmt.Errorf("Timed out after %v waiting for the command to execute", duration(self.Timeout))
 			}
 
 			if err == nil {

@@ -66,6 +66,10 @@ func (self *Server) ListenAndServe(address string) error {
 	if self.ZeroconfMDNS || self.ZeroconfEC2Tag != `` {
 		_, portS, _ := net.SplitHostPort(address)
 		go self.startZeroconf(int(typeutil.Int(portS)))
+	} else {
+		self.reacter.Peers = []*netutil.Service{
+			self.localNode(address),
+		}
 	}
 
 	server.UseHandler(router)
@@ -144,4 +148,24 @@ func (self *Server) startZeroconf(port int) {
 			}
 		}
 	}
+}
+
+func (self *Server) localNode(address string) *netutil.Service {
+	hostname, _ := os.Hostname()
+	addrs, _ := netutil.RoutableAddresses()
+
+	if address == `` {
+		address = netutil.DefaultAddress().IP.String()
+	}
+
+	svc := &netutil.Service{
+		Hostname: hostname,
+		Address:  address,
+	}
+
+	for _, addr := range addrs {
+		svc.Addresses = append(svc.Addresses, addr.IP)
+	}
+
+	return svc
 }

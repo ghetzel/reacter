@@ -13,7 +13,7 @@ import (
 	"github.com/ghetzel/reacter/util"
 )
 
-const DefaultLogLevel = `info`
+const DefaultLogLevel = `notice`
 
 func main() {
 	app := cli.NewApp()
@@ -46,16 +46,19 @@ func main() {
 			EnvVar: `REACTER_CONFIG_DIR`,
 		},
 		cli.StringFlag{
-			Name:  `http-address, a`,
-			Usage: `If provided, start an HTTP server at this address and serve a web interface.`,
+			Name:   `http-address, a`,
+			Usage:  `If provided, start an HTTP server at this address and serve a web interface.`,
+			EnvVar: `REACTER_HTTP`,
 		},
 		cli.StringFlag{
-			Name:  `http-path-prefix`,
-			Usage: `If specified, frontend web assets will be expected to be served from this URL subdirectory.`,
+			Name:   `http-path-prefix`,
+			Usage:  `If specified, frontend web assets will be expected to be served from this URL subdirectory.`,
+			EnvVar: `REACTER_HTTP_PREFIX`,
 		},
 		cli.BoolFlag{
-			Name:  `zeroconf`,
-			Usage: `Publish and perform automatic discovery of peer Reacter instances`,
+			Name:   `zeroconf`,
+			Usage:  `Publish and perform automatic discovery of peer Reacter instances`,
+			EnvVar: `REACTER_ZEROCONF`,
 		},
 		cli.StringFlag{
 			Name:  `zeroconf-ec2-tag`,

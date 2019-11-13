@@ -10,7 +10,7 @@ import (
 )
 
 const ApplicationName = `reacter`
-const ApplicationVersion = `1.0.8`
+const ApplicationVersion = `1.1.0`
 const ApplicationSummary = `a tool for generating, consuming, and handling system monitoring events`
 
 var StartedAt = time.Now()
